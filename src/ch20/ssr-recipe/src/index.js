@@ -5,21 +5,26 @@ import {BrowserRouter} from "react-router-dom";
 import {applyMiddleware, createStore} from "redux";
 import thunk from "redux-thunk";
 import App from './App';
-import rootReducer from "./modules";
+import rootReducer,{rootSaga} from "./modules";
 import reportWebVitals from './reportWebVitals';
+import createSagaMiddleware from "redux-saga";
+
+const sagMiddleware = createSagaMiddleware();
+
 
 const store = createStore(
 	rootReducer,
 	window.__PRELOADED_STATE__,
-	applyMiddleware(thunk));
+	applyMiddleware(thunk,sagMiddleware));
+
+sagMiddleware.run(rootSaga);
 
 ReactDOM.render(
 	<Provider store={store}>
 		<BrowserRouter>
 			<App/>
 		</BrowserRouter>
-	</Provider>
-	,
+	</Provider>,
 	document.getElementById('root')
 );
 

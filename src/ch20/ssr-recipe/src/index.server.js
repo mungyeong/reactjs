@@ -8,7 +8,8 @@ import {StaticRouter} from "react-router-dom"
 import {applyMiddleware, createStore} from "redux";
 import thunk from "redux-thunk";
 import App from "./App"
-import rootReducer from "./modules";
+import createSagaMiddleware,{END} from "redux-saga";
+import rootReducer, { rootSaga } from "./modules";
 import PreloadContext from "./lib/PreloadContext";
 
 const manifest = JSON.parse(
@@ -25,7 +26,7 @@ function createPage(root,stateScript) {
 	<html lang="ko">
 	<head>
 		<meta charset="UTF-8"/>
-		<meta name="viewport" content="width=device-width,initial=scale=1,shrink-to-fit=no" />
+		<meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no" />
 		<meta name="theme-color" content="#000000" />
 		<title>React App</title>
 		<link href="${manifest.files["main.css"]}" rel="stylesheet"/>
@@ -47,7 +48,9 @@ const app = express();
 
 const serverRender = async (req, res, next) => {
 	const context = {};
-	const store = createStore(rootReducer, applyMiddleware(thunk));
+	const sagaMiddleware = createSagaMiddleware();
+	const store = createStore(rootReducer, applyMiddleware(thunk,sagaMiddleware));
+	const sagaPromise = sagaMiddleware.run(rootSaga).toPromise();
 	const preloadContext = {
 		done:false,
 		promises: [],
@@ -63,8 +66,9 @@ const serverRender = async (req, res, next) => {
 	);
 
 	ReactDOMServer.renderToStaticMarkup(jsx);
-
+	store.dispatch(END);
 	try {
+		await sagaPromise;
 		await Promise.all(preloadContext.promises);
 	} catch (err) {
 		return res.status(500);
