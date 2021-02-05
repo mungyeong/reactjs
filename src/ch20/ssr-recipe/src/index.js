@@ -8,6 +8,7 @@ import App from './App';
 import rootReducer,{rootSaga} from "./modules";
 import reportWebVitals from './reportWebVitals';
 import createSagaMiddleware from "redux-saga";
+import {loadableReady} from "@loadable/component";
 
 const sagMiddleware = createSagaMiddleware();
 
@@ -19,13 +20,24 @@ const store = createStore(
 
 sagMiddleware.run(rootSaga);
 
-ReactDOM.render(
-	<Provider store={store}>
+const Root = () => {
+	return (
+		<Provider store={store}>
 		<BrowserRouter>
 			<App/>
 		</BrowserRouter>
-	</Provider>,
-	document.getElementById('root')
-);
+	</Provider>)
+}
+
+const root = document.getElementById("root");
+
+if (process.env.NODE_ENV === "production") {
+	loadableReady(() => {
+		ReactDOM.hydrate(<Root/>, root);
+	});
+} else {
+	ReactDOM.render(<Root/>, root);
+}
+
 
 reportWebVitals();

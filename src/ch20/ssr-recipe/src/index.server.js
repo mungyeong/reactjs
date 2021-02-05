@@ -1,27 +1,21 @@
+import {ChunkExtractor, ChunkExtractorManager} from "@loadable/server";
 import express from "express";
-import fs from "fs";
 import path from "path";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import {Provider} from "react-redux";
 import {StaticRouter} from "react-router-dom"
 import {applyMiddleware, createStore} from "redux";
+import createSagaMiddleware, {END} from "redux-saga";
 import thunk from "redux-thunk";
 import App from "./App"
-import createSagaMiddleware,{END} from "redux-saga";
-import rootReducer, { rootSaga } from "./modules";
 import PreloadContext from "./lib/PreloadContext";
+import rootReducer, {rootSaga} from "./modules";
 
-const manifest = JSON.parse(
-	fs.readFileSync(path.resolve("./build/asset-manifest.json"), "utf-8")
-);
+const statsFile = path.resolve('./build/loadable-stats.json');
 
-const chunks = Object.keys(manifest.files)
-	.filter((key) => /chunk\.js$/.exec(key))
-	.map((key) => `<script src="${manifest.files[key]}"></script>`)
-	.join("");
 
-function createPage(root,stateScript) {
+function createPage(root, tags) {
 	return `<!DOCTYPE html>
 	<html lang="ko">
 	<head>
@@ -29,16 +23,14 @@ function createPage(root,stateScript) {
 		<meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no" />
 		<meta name="theme-color" content="#000000" />
 		<title>React App</title>
-		<link href="${manifest.files["main.css"]}" rel="stylesheet"/>
+		${tags.styles}
+		${tags.links}
 	</head>
 	<body>
 		<div id="root">
 		${root}
 		</div>
-		${stateScript}
-		<script src="${manifest.files["runtime-main.js"]}" />
-		${chunks}
-		<script src="${manifest.files["main.js"]}" />
+		${tags.scripts}
 	</body>
 	</html>
 	`;
@@ -49,20 +41,25 @@ const app = express();
 const serverRender = async (req, res, next) => {
 	const context = {};
 	const sagaMiddleware = createSagaMiddleware();
-	const store = createStore(rootReducer, applyMiddleware(thunk,sagaMiddleware));
+	const store = createStore(rootReducer, applyMiddleware(thunk, sagaMiddleware));
 	const sagaPromise = sagaMiddleware.run(rootSaga).toPromise();
 	const preloadContext = {
-		done:false,
+		done    : false,
 		promises: [],
 	}
+
+	const extractor = new ChunkExtractor({statsFile});
+
 	const jsx = (
-		<PreloadContext.Provider value={preloadContext}>
-		<Provider store={store}>
-			<StaticRouter location={req.url} context={context}>
-				<App/>
-			</StaticRouter>
-		</Provider>
-		</PreloadContext.Provider>
+		<ChunkExtractorManager extractor={extractor}>
+			<PreloadContext.Provider value={preloadContext}>
+				<Provider store={store}>
+					<StaticRouter location={req.url} context={context}>
+						<App/>
+					</StaticRouter>
+				</Provider>
+			</PreloadContext.Provider>
+		</ChunkExtractorManager>
 	);
 
 	ReactDOMServer.renderToStaticMarkup(jsx);
@@ -74,7 +71,7 @@ const serverRender = async (req, res, next) => {
 		return res.status(500);
 	}
 
-	preloadContext.done= true;
+	preloadContext.done = true;
 
 
 	const root = ReactDOMServer.renderToString(jsx);
@@ -82,8 +79,13 @@ const serverRender = async (req, res, next) => {
 	const stateString = JSON.stringify(store.getState()).replace(/</g, "\\u003c");
 	const stateScript = `<script>__PRELOADED_STATE__ = ${stateString}</script>`;
 
+	const tags = {
+		scripts: stateScript + extractor.getScriptTags(),
+		links: extractor.getLinkTags(),
+		styles: extractor.getStyleTags(),
+	};
 
-	res.send(createPage(root,stateScript));
+	res.send(createPage(root, tags));
 }
 
 const serve = express.static(path.resolve("./build"), {
